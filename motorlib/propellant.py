@@ -1,5 +1,7 @@
 """Propellant submodule that contains the propellant class."""
 
+import math
+
 from scipy.optimize import fsolve
 
 from .properties import PropertyCollection, FloatProperty, StringProperty, TabularProperty
@@ -14,6 +16,7 @@ class PropellantTab(PropertyCollection):
         self.props['maxPressure'] = FloatProperty('Maximum Pressure', 'Pa', 0, 7e7)
         self.props['a'] = FloatProperty('Burn rate Coefficient', 'm/(s*Pa^n)', 1E-8, 2)
         self.props['n'] = FloatProperty('Burn rate Exponent', '', -0.99, 0.99)
+        self.props['sigma'] = FloatProperty('Temperature Sensitivity', '/K', 0, 0.01)
         self.props['k'] = FloatProperty('Specific Heat Ratio', '', 1+1e-6, 10)
         self.props['t'] = FloatProperty('Combustion Temperature', 'K', 1, 10000)
         self.props['m'] = FloatProperty('Exhaust Molar Mass', 'g/mol', 1e-6, 100)
@@ -38,10 +41,26 @@ class Propellant(PropertyCollection):
         denom = gamma * ((2 / (gamma + 1))**((gamma + 1) / (gamma - 1)))**0.5
         return num / denom
 
-    def getBurnRate(self, pressure):
+    def getBurnRate(self, pressure, ambientTemp=294):
         """Returns the propellant's burn rate for the given pressure"""
+        Tref = 294
         ballA, ballN, _, _, _ = self.getCombustionProperties(pressure)
-        return ballA * (pressure ** ballN)
+        rate = ballA * (pressure ** ballN)
+        sigma = 0
+        closest = {}
+        closestPressure = 1e100
+        for tab in self.getProperty('tabs'):
+            if tab['minPressure'] < pressure < tab['maxPressure']:
+                sigma = tab['sigma']
+                return rate * math.exp(sigma * (ambientTemp - Tref))
+            if abs(pressure - tab['minPressure']) < closestPressure:
+                closest = tab
+                closestPressure = abs(pressure - tab['minPressure'])
+            if abs(pressure - tab['maxPressure']) < closestPressure:
+                closest = tab
+                closestPressure = abs(pressure - tab['maxPressure'])
+        sigma = closest['sigma']
+        return rate * math.exp(sigma * (ambientTemp - Tref))
 
     def getPressureFromKn(self, kn):
         density = self.getProperty('density')

@@ -47,6 +47,9 @@ class MotorConfig(PropertyCollection):
         self.props["ambPressure"] = FloatProperty(
             "Ambient Pressure", "Pa", 0.0001, 102000
         )
+        self.props["ambTemperature"] = FloatProperty(
+            "Ambient Temperature", "K", 233, 333
+        )
         self.props["mapDim"] = IntProperty("Grain Map Dimension", "", 250, 2000)
         self.props["sepPressureRatio"] = FloatProperty(
             "Separation Pressure Ratio", "", 0.001, 1
@@ -298,6 +301,14 @@ class Motor:
                     )
                 )
 
+        ambTemp = self.config.getProperty("ambTemperature")
+        print(f"[DEBUG] Simulation started")
+        print(f"[DEBUG] Ambient Temperature: {ambTemp} K ({ambTemp - 273.15:.1f} °C)")
+        print(f"[DEBUG] Ambient Pressure: {self.config.getProperty('ambPressure')} Pa")
+        print(f"[DEBUG] Propellant: {self.propellant.getProperty('name')}")
+        for i, tab in enumerate(self.propellant.getProperty('tabs')):
+            print(f"[DEBUG] Tab {i+1} sigma: {tab.get('sigma', 0)}, a: {tab['a']}, n: {tab['n']}")
+
         # Perform timesteps
         while simRes.shouldContinueSim(burnoutThrustThres):
             # Calculate regression
@@ -310,7 +321,7 @@ class Motor:
                 if grain.getWebLeft(perGrainReg[gid]) > burnoutWebThres:
                     # Calculate regression at the current pressure
                     reg = dTime * self.propellant.getBurnRate(
-                        simRes.channels["pressure"].getLast()
+                        simRes.channels["pressure"].getLast(), ambTemp
                     )
                     # Find the mass flux through the grain based on the mass flow fed into from grains above it
                     perGrainMassFlux[gid] = grain.getPeakMassFlux(
@@ -391,6 +402,12 @@ class Motor:
                     return simRes
 
         simRes.success = True
+
+        print(f"[DEBUG] Simulation finished")
+        print(f"[DEBUG] Peak Thrust: {max(simRes.channels['force'].getData()):.2f} N")
+        print(f"[DEBUG] Total Impulse: {sum(f * self.config.getProperty('timestep') for f in simRes.channels['force'].getData()):.2f} Ns")
+        print(f"[DEBUG] Peak Pressure: {max(simRes.channels['pressure'].getData())/1e6:.3f} MPa")
+        print(f"[DEBUG] Burn Time: {max(simRes.channels['time'].getData()):.3f} s")
 
         if simRes.getPeakMassFlux() > self.config.getProperty("maxMassFlux"):
             desc = "Peak mass flux exceeded configured limit"
